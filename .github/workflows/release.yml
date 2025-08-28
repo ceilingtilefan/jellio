@@ -38,6 +38,33 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
+      - name: Build .NET Project
+        run: |
+          cd Jellyfin.Plugin.Jellio
+          dotnet restore
+          dotnet build --configuration Release --no-restore
+          dotnet publish --configuration Release --no-build --output ./publish
+
+      - name: Package Plugin ZIP
+        run: |
+          cd Jellyfin.Plugin.Jellio
+          PLUGIN_NAME="Jellio"
+          VERSION="${{ steps.version.outputs.version_number }}"
+          ZIP_NAME="${PLUGIN_NAME}-${VERSION}.zip"
+          
+          # Create the ZIP file with the published output
+          cd publish
+          zip -r "../${ZIP_NAME}" .
+          cd ..
+          
+          # Move ZIP to root for next steps
+          mv "${ZIP_NAME}" "../${ZIP_NAME}"
+          cd ..
+          
+          echo "zip_basename=${ZIP_NAME}" >> $GITHUB_OUTPUT
+          echo "zip_full_path=${ZIP_NAME}" >> $GITHUB_OUTPUT
+        id: package
+
       - name: Extract Release Version Number
         id: version
         run: |
@@ -79,32 +106,15 @@ jobs:
         env:
           RELEASE_BODY: ${{ github.event.release.body }}
 
-      - name: Build Jellyfin Plugin & Package ZIP
-        uses: oddstr13/jellyfin-plugin-repository-manager@v1.1.1
-        id: jprm
-        with:
-          dotnet-target: 'net8.0'
-          version: ${{ steps.version.outputs.version_number }}
-
-      - name: Get Zip Filename and Path
-        id: filename
-        run: |
-          ZIP_FILE_PATH="${{ steps.jprm.outputs.artifact }}"
-          ZIP_BASENAME=$(basename "${ZIP_FILE_PATH}")
-          echo "Zip full path: ${ZIP_FILE_PATH}"
-          echo "Zip filename: ${ZIP_BASENAME}"
-          echo "zip_basename=${ZIP_BASENAME}" >> $GITHUB_OUTPUT
-          echo "zip_full_path=${ZIP_FILE_PATH}" >> $GITHUB_OUTPUT
-
       - name: Upload plugin ZIP to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ steps.filename.outputs.zip_full_path }}
+          files: ${{ steps.package.outputs.zip_full_path }}
 
       - name: Move Plugin Artifact Temporarily
         run: |
-          echo "Moving ${{ steps.filename.outputs.zip_full_path }} to temporary location..."
-          mv "${{ steps.filename.outputs.zip_full_path }}" "/home/runner/work/plugin.zip.tmp"
+          echo "Moving ${{ steps.package.outputs.zip_full_path }} to temporary location..."
+          mv "${{ steps.package.outputs.zip_full_path }}" "/home/runner/work/plugin.zip.tmp"
 
       - name: Checkout Metadata Branch
         uses: actions/checkout@v4
@@ -122,7 +132,7 @@ jobs:
           MANIFEST_FILE="./jellyfin-repo-manifest.json"
           TEMP_PLUGIN_ZIP="/home/runner/work/plugin.zip.tmp"
 
-          PLUGIN_DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${{ steps.filename.outputs.zip_basename }}"
+          PLUGIN_DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${{ steps.package.outputs.zip_basename }}"
 
           echo "Using manifest file: ${MANIFEST_FILE}"
           echo "Using plugin zip: ${TEMP_PLUGIN_ZIP}"
