@@ -11,8 +11,10 @@ using MediaBrowser.Controller.Dto;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
+using MediaBrowser.Controller.Session;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
+using MediaBrowser.Model.Session;
 using MediaBrowser.Model.MediaInfo;
 using MediaBrowser.Model.Querying;
 using Microsoft.AspNetCore.Mvc;
@@ -26,7 +28,8 @@ namespace Jellyfin.Plugin.Jellio.Controllers;
 public class AddonController(
     IUserViewManager userViewManager,
     IDtoService dtoService,
-    ILibraryManager libraryManager
+    ILibraryManager libraryManager,
+    ISessionManager sessionManager
 ) : ControllerBase
 {
     private string GetBaseUrl()
@@ -105,7 +108,101 @@ public class AddonController(
                 Description = BuildStreamDescription(dto, source),
             })
         );
+        
+        // Report playback to Jellyfin Active Devices
+        if (items.Count > 0)
+        {
+            ReportPlaybackToJellyfin(user, items[0]);
+        }
+        
         return Ok(new { streams });
+    }
+
+    private void ReportPlaybackToJellyfin(User user, BaseItem item)
+    {
+        try
+        {
+            // Find the Jellio session for this user
+            var sessions = sessionManager.Sessions.Where(s => s.UserId == user.Id && s.DeviceName == "Jellio").ToList();
+            
+            if (sessions.Count > 0)
+            {
+                var session = sessions[0];
+                
+                // Create a unique playback session ID
+                var playSessionId = Guid.NewGuid().ToString();
+                
+                // Store the play session ID for future updates
+                if (!sessionManager.Sessions.Any(s => s.Id == session.Id))
+                {
+                    return; // Session no longer exists
+                }
+                
+                // Report the session activity with playback information
+                var sessionInfo = new SessionInfo
+                {
+                    Id = session.Id,
+                    UserId = user.Id,
+                    UserName = user.Username,
+                    ClientName = "Jellio",
+                    DeviceName = "Jellio",
+                    DeviceId = session.DeviceId,
+                    ApplicationVersion = "1.0.0",
+                    NowPlayingItem = new SessionInfoNowPlaying
+                    {
+                        Id = item.Id,
+                        Name = item.Name,
+                        Type = item.GetType().Name,
+                        MediaType = item.MediaType,
+                        RunTimeTicks = item.RunTimeTicks,
+                        PlayMethod = PlayMethod.DirectStream,
+                        PlaySessionId = playSessionId,
+                        CanSeek = true,
+                        IsPaused = false,
+                        IsMuted = false,
+                        AudioStreamIndex = 0,
+                        SubtitleStreamIndex = -1,
+                        VolumeLevel = 100,
+                        PlaybackStartTime = DateTime.UtcNow,
+                        PositionTicks = 0,
+                        RepeatMode = RepeatMode.RepeatNone,
+                        ShuffleMode = ShuffleMode.None,
+                        PlaybackDuration = item.RunTimeTicks ?? 0
+                    }
+                };
+                
+                // Update the session
+                sessionManager.ReportSessionActivity(session.Id, sessionInfo);
+                
+                // Also report the playback start
+                sessionManager.ReportPlaybackStart(session.Id, new PlaybackStartInfo
+                {
+                    ItemId = item.Id,
+                    PlaySessionId = playSessionId,
+                    PlayMethod = PlayMethod.DirectStream,
+                    CanSeek = true,
+                    AudioStreamIndex = 0,
+                    SubtitleStreamIndex = -1
+                });
+                
+                // Report initial playback progress
+                sessionManager.ReportPlaybackProgress(session.Id, new PlaybackProgressInfo
+                {
+                    ItemId = item.Id,
+                    PositionTicks = 0,
+                    IsPaused = false,
+                    CanSeek = true,
+                    AudioStreamIndex = 0,
+                    SubtitleStreamIndex = -1
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            // Log error but don't fail the request
+            // In a production environment, you'd want proper logging here
+            Console.WriteLine($"Failed to report playback to Jellyfin: {ex.Message}");
+        }
     }
 
     private static string BuildStreamName(BaseItemDto dto, MediaSourceInfo source)
@@ -126,7 +223,7 @@ public class AddonController(
                 // Add resolution
                 if (videoStream.Width.HasValue && videoStream.Height.HasValue)
                 {
-                    videoInfo.Add($"{videoStream.Width}x{videoStream.Height}");
+                    videoInfo.Add(GetHumanReadableResolution(videoStream.Width.Value, videoStream.Height.Value));
                 }
                 
                 // Add HDR info
@@ -206,7 +303,34 @@ public class AddonController(
             parts.Add($"Size: {sizeInGB:F1} GB");
         }
         
+        // Add resolution to footer
+        if (source.MediaStreams != null)
+        {
+            var videoStream = source.MediaStreams.FirstOrDefault(s => s.Type == MediaStreamType.Video);
+            if (videoStream != null && videoStream.Width.HasValue && videoStream.Height.HasValue)
+            {
+                var resolution = GetHumanReadableResolution(videoStream.Width.Value, videoStream.Height.Value);
+                parts.Add($"Jellyfin {resolution}");
+            }
+        }
+        
         return parts.Count > 0 ? string.Join(" | ", parts) : "Jellio Stream";
+    }
+
+    private static string GetHumanReadableResolution(int width, int height)
+    {
+        return (width, height) switch
+        {
+            (7680, 4320) => "8K",
+            (3840, 2160) => "4K",
+            (2560, 1440) => "1440p",
+            (1920, 1080) => "1080p",
+            (1280, 720) => "720p",
+            (854, 480) => "480p",
+            (640, 360) => "360p",
+            (426, 240) => "240p",
+            _ => $"{width}x{height}"
+        };
     }
 
     [HttpGet("manifest.json")]
@@ -456,5 +580,108 @@ public class AddonController(
         var episodeItems = libraryManager.GetItemList(episodeQuery);
 
         return GetStreamsResult(user, episodeItems);
+    }
+
+    [HttpPost("playback/progress")]
+    public IActionResult ReportPlaybackProgress(
+        [ConfigFromBase64Json] ConfigModel config,
+        [FromBody] PlaybackProgressRequest request
+    )
+    {
+        var user = (User)HttpContext.Items["JellioUser"]!;
+        
+        try
+        {
+            var item = libraryManager.GetItemById<BaseItem>(request.ItemId, user);
+            if (item == null)
+            {
+                return NotFound();
+            }
+
+            UpdatePlaybackProgress(user, item, request.PositionTicks, request.IsPaused);
+            return Ok();
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
+
+    [HttpPost("playback/stop")]
+    public IActionResult ReportPlaybackStop(
+        [ConfigFromBase64Json] ConfigModel config,
+        [FromBody] PlaybackStopRequest request
+    )
+    {
+        var user = (User)HttpContext.Items["JellioUser"]!;
+        
+        try
+        {
+            var item = libraryManager.GetItemById<BaseItem>(request.ItemId, user);
+            if (item == null)
+            {
+                return NotFound();
+            }
+
+            StopPlayback(user, item, request.PositionTicks);
+            return Ok();
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
+
+    private void UpdatePlaybackProgress(User user, BaseItem item, long positionTicks, bool isPaused)
+    {
+        try
+        {
+            var sessions = sessionManager.Sessions.Where(s => s.UserId == user.Id && s.DeviceName == "Jellio").ToList();
+            
+            if (sessions.Count > 0)
+            {
+                var session = sessions[0];
+                
+                // Report playback progress
+                sessionManager.ReportPlaybackProgress(session.Id, new PlaybackProgressInfo
+                {
+                    ItemId = item.Id,
+                    PositionTicks = positionTicks,
+                    IsPaused = isPaused,
+                    CanSeek = true,
+                    AudioStreamIndex = 0,
+                    SubtitleStreamIndex = -1
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to update playback progress: {ex.Message}");
+        }
+    }
+
+    private void StopPlayback(User user, BaseItem item, long positionTicks)
+    {
+        try
+        {
+            var sessions = sessionManager.Sessions.Where(s => s.UserId == user.Id && s.DeviceName == "Jellio").ToList();
+            
+            if (sessions.Count > 0)
+            {
+                var session = sessions[0];
+                
+                // Report playback stopped
+                sessionManager.ReportPlaybackStopped(session.Id, new PlaybackStopInfo
+                {
+                    ItemId = item.Id,
+                    PositionTicks = positionTicks,
+                    PlaySessionId = Guid.NewGuid().ToString()
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to stop playback: {ex.Message}");
+        }
     }
 }
