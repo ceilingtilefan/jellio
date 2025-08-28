@@ -8,6 +8,14 @@
         "category": "General",
         "versions": [
             {
+                "version": "1.0.0.0",
+                "changelog": "- Added video and audio info to stream info",
+                "targetAbi": "10.10.0.0",
+                "sourceUrl": "https://github.com/ceilingtilefan/jellio/releases/download/v1.0.0/jellio_1.0.0.0.zip",
+                "checksum": "537ba0d1902bdc58459726a4ba0d5499",
+                "timestamp": "2025-08-28T20:32:54Z"
+            },
+            {
                 "version": "0.1.1.0",
                 "changelog": "**Full Changelog**: https://github.com/vanchaxy/jellio/compare/v0.1.0...v0.1.1",
                 "targetAbi": "10.10.0.0",
