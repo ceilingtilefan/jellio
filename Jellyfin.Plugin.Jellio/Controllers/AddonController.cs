@@ -592,7 +592,19 @@ public class AddonController(
         
         try
         {
-            var item = libraryManager.GetItemById<BaseItem>(request.ItemId, user);
+            // Parse the itemId from "jellio:guid" format
+            if (!request.ItemId.StartsWith("jellio:", StringComparison.OrdinalIgnoreCase))
+            {
+                return BadRequest(new { error = "Invalid itemId format. Expected 'jellio:guid'" });
+            }
+            
+            var guidString = request.ItemId.Substring(7); // Remove "jellio:" prefix
+            if (!Guid.TryParse(guidString, out var itemGuid))
+            {
+                return BadRequest(new { error = "Invalid GUID format in itemId" });
+            }
+            
+            var item = libraryManager.GetItemById<BaseItem>(itemGuid, user);
             if (item == null)
             {
                 return NotFound();
@@ -617,7 +629,19 @@ public class AddonController(
         
         try
         {
-            var item = libraryManager.GetItemById<BaseItem>(request.ItemId, user);
+            // Parse the itemId from "jellio:guid" format
+            if (!request.ItemId.StartsWith("jellio:", StringComparison.OrdinalIgnoreCase))
+            {
+                return BadRequest(new { error = "Invalid itemId format. Expected 'jellio:guid'" });
+            }
+            
+            var guidString = request.ItemId.Substring(7); // Remove "jellio:" prefix
+            if (!Guid.TryParse(guidString, out var itemGuid))
+            {
+                return BadRequest(new { error = "Invalid GUID format in itemId" });
+            }
+            
+            var item = libraryManager.GetItemById<BaseItem>(itemGuid, user);
             if (item == null)
             {
                 return NotFound();
