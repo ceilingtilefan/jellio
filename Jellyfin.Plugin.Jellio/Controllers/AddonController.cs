@@ -13,6 +13,7 @@ using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
+using MediaBrowser.Model.MediaInfo;
 using MediaBrowser.Model.Querying;
 using Microsoft.AspNetCore.Mvc;
 
@@ -100,11 +101,112 @@ public class AddonController(
             dto.MediaSources.Select(source => new StreamDto
             {
                 Url = $"{baseUrl}/videos/{dto.Id}/stream?mediaSourceId={source.Id}&static=true",
-                Name = "Jellio",
-                Description = source.Name,
+                Name = BuildStreamName(dto, source),
+                Description = BuildStreamDescription(dto, source),
             })
         );
         return Ok(new { streams });
+    }
+
+    private static string BuildStreamName(BaseItemDto dto, MediaSourceInfo source)
+    {
+        var parts = new List<string>();
+        
+        // Add movie/series title
+        parts.Add(dto.Name);
+        
+        // Add video quality info
+        if (source.MediaStreams != null)
+        {
+            var videoStream = source.MediaStreams.FirstOrDefault(s => s.Type == MediaStreamType.Video);
+            if (videoStream != null)
+            {
+                var videoInfo = new List<string>();
+                
+                // Add resolution
+                if (videoStream.Width.HasValue && videoStream.Height.HasValue)
+                {
+                    videoInfo.Add($"{videoStream.Width}x{videoStream.Height}");
+                }
+                
+                // Add HDR info
+                if (!string.IsNullOrEmpty(videoStream.ColorTransfer) && 
+                    (videoStream.ColorTransfer.Contains("2020", StringComparison.OrdinalIgnoreCase) || 
+                     videoStream.ColorTransfer.Contains("2100", StringComparison.OrdinalIgnoreCase)))
+                {
+                    videoInfo.Add("HDR");
+                }
+                else if (!string.IsNullOrEmpty(videoStream.ColorSpace) && 
+                         videoStream.ColorSpace.Contains("2020", StringComparison.OrdinalIgnoreCase))
+                {
+                    videoInfo.Add("HDR");
+                }
+                
+                // Add codec info
+                if (!string.IsNullOrEmpty(videoStream.Codec))
+                {
+                    videoInfo.Add(videoStream.Codec.ToUpperInvariant());
+                }
+                
+                if (videoInfo.Count > 0)
+                {
+                    parts.Add(string.Join(" ", videoInfo));
+                }
+            }
+        }
+        
+        return string.Join(" | ", parts);
+    }
+
+    private static string BuildStreamDescription(BaseItemDto dto, MediaSourceInfo source)
+    {
+        var parts = new List<string>();
+        
+        // Add source name if different from title
+        if (!string.IsNullOrEmpty(source.Name) && source.Name != dto.Name)
+        {
+            parts.Add(source.Name);
+        }
+        
+        // Add audio language info
+        if (source.MediaStreams != null)
+        {
+            var audioStreams = source.MediaStreams.Where(s => s.Type == MediaStreamType.Audio).ToList();
+            if (audioStreams.Count > 0)
+            {
+                var languages = audioStreams
+                    .Where(s => !string.IsNullOrEmpty(s.Language))
+                    .Select(s => s.Language)
+                    .Distinct()
+                    .ToList();
+                
+                if (languages.Count > 0)
+                {
+                    parts.Add($"Audio: {string.Join(", ", languages)}");
+                }
+                
+                // Add audio codec info
+                var audioCodecs = audioStreams
+                    .Where(s => !string.IsNullOrEmpty(s.Codec))
+                    .Select(s => s.Codec.ToUpperInvariant())
+                    .Distinct()
+                    .ToList();
+                
+                if (audioCodecs.Count > 0)
+                {
+                    parts.Add($"Codec: {string.Join(", ", audioCodecs)}");
+                }
+            }
+        }
+        
+        // Add file size if available
+        if (source.Size.HasValue && source.Size.Value > 0)
+        {
+            var sizeInGB = source.Size.Value / (1024.0 * 1024.0 * 1024.0);
+            parts.Add($"Size: {sizeInGB:F1} GB");
+        }
+        
+        return parts.Count > 0 ? string.Join(" | ", parts) : "Jellio Stream";
     }
 
     [HttpGet("manifest.json")]
