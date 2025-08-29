@@ -38,30 +38,6 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      - name: Build .NET Project
-        run: |
-          cd Jellyfin.Plugin.Jellio
-          dotnet restore
-          dotnet build --configuration Release --no-restore
-
-      - name: Build Jellyfin Plugin & Package ZIP
-        uses: oddstr13/jellyfin-plugin-repository-manager@v1.1.1
-        id: jprm
-        with:
-          dotnet-target: 'net8.0'
-          version: ${{ steps.version.outputs.version_number }}
-          working-directory: Jellyfin.Plugin.Jellio
-
-      - name: Get Zip Filename and Path
-        id: filename
-        run: |
-          ZIP_FILE_PATH="${{ steps.jprm.outputs.artifact }}"
-          ZIP_BASENAME=$(basename "${ZIP_FILE_PATH}")
-          echo "Zip full path: ${ZIP_FILE_PATH}"
-          echo "Zip filename: ${ZIP_BASENAME}"
-          echo "zip_basename=${ZIP_BASENAME}" >> $GITHUB_OUTPUT
-          echo "zip_full_path=${ZIP_FILE_PATH}" >> $GITHUB_OUTPUT
-
       - name: Extract Release Version Number
         id: version
         run: |
@@ -102,6 +78,23 @@ jobs:
           python3 update_yaml.py
         env:
           RELEASE_BODY: ${{ github.event.release.body }}
+
+      - name: Build Jellyfin Plugin & Package ZIP
+        uses: oddstr13/jellyfin-plugin-repository-manager@v1.1.1
+        id: jprm
+        with:
+          dotnet-target: 'net8.0'
+          version: ${{ steps.version.outputs.version_number }}
+
+      - name: Get Zip Filename and Path
+        id: filename
+        run: |
+          ZIP_FILE_PATH="${{ steps.jprm.outputs.artifact }}"
+          ZIP_BASENAME=$(basename "${ZIP_FILE_PATH}")
+          echo "Zip full path: ${ZIP_FILE_PATH}"
+          echo "Zip filename: ${ZIP_BASENAME}"
+          echo "zip_basename=${ZIP_BASENAME}" >> $GITHUB_OUTPUT
+          echo "zip_full_path=${ZIP_FILE_PATH}" >> $GITHUB_OUTPUT
 
       - name: Upload plugin ZIP to GitHub Release
         uses: softprops/action-gh-release@v2
