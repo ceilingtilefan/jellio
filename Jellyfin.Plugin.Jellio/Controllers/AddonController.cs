@@ -15,6 +15,7 @@ using MediaBrowser.Controller.Session;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.MediaInfo;
+using MediaBrowser.Model.Session;
 using MediaBrowser.Model.Querying;
 using Microsoft.AspNetCore.Mvc;
 
@@ -128,28 +129,60 @@ public class AddonController(
             {
                 var session = sessions[0];
                 
-                // Create a unique playback session ID
-                var playSessionId = Guid.NewGuid().ToString();
-                
-                // Store the play session ID for future updates
-                if (!sessionManager.Sessions.Any(s => s.Id == session.Id))
+                // Keep the session active by updating it
+                // This ensures the user shows up in Active Devices
+                sessionManager.UpdateSession(session.Id, new SessionInfo
                 {
-                    return; // Session no longer exists
-                }
+                    Id = session.Id,
+                    UserId = user.Id,
+                    UserName = user.Username,
+                    DeviceName = "Jellio",
+                    DeviceId = session.DeviceId,
+                    ApplicationVersion = "1.0.0",
+                    LastActivityDate = DateTime.UtcNow,
+                    PlayState = new PlaybackProgressInfo
+                    {
+                        ItemId = item.Id,
+                        PositionTicks = 0,
+                        IsPaused = false,
+                        CanSeek = true,
+                        AudioStreamIndex = 0,
+                        SubtitleStreamIndex = -1
+                    }
+                });
                 
-                // Update the session with basic playback information
-                // Note: We'll use a simpler approach that's compatible with Jellyfin's session system
-                Console.WriteLine($"Reporting playback for user {user.Username}: {item.Name} (ID: {item.Id})");
+                Console.WriteLine($"Updated session for user {user.Username}: {item.Name} (ID: {item.Id})");
+            }
+            else
+            {
+                // If no session exists, create one
+                var deviceId = Guid.NewGuid().ToString();
+                var session = sessionManager.CreateSession(new SessionInfo
+                {
+                    Id = Guid.NewGuid().ToString(),
+                    UserId = user.Id,
+                    UserName = user.Username,
+                    DeviceName = "Jellio",
+                    DeviceId = deviceId,
+                    ApplicationVersion = "1.0.0",
+                    LastActivityDate = DateTime.UtcNow,
+                    PlayState = new PlaybackProgressInfo
+                    {
+                        ItemId = item.Id,
+                        PositionTicks = 0,
+                        IsPaused = false,
+                        CanSeek = true,
+                        AudioStreamIndex = 0,
+                        SubtitleStreamIndex = -1
+                    }
+                });
                 
-                // For now, we'll just log the playback activity
-                // The session is already active, so Jellyfin will show the user as online
-                // Future versions can implement more advanced playback reporting when the APIs are available
+                Console.WriteLine($"Created new session for user {user.Username}: {item.Name} (ID: {item.Id})");
             }
         }
         catch (Exception ex)
         {
             // Log error but don't fail the request
-            // In a production environment, you'd want proper logging here
             Console.WriteLine($"Failed to report playback to Jellyfin: {ex.Message}");
         }
     }
@@ -615,10 +648,29 @@ public class AddonController(
             {
                 var session = sessions[0];
                 
-                // Log playback progress for now
-                // Future versions can implement proper progress reporting when the APIs are available
+                // Update the session with current playback progress
+                sessionManager.UpdateSession(session.Id, new SessionInfo
+                {
+                    Id = session.Id,
+                    UserId = user.Id,
+                    UserName = user.Username,
+                    DeviceName = "Jellio",
+                    DeviceId = session.DeviceId,
+                    ApplicationVersion = "1.0.0",
+                    LastActivityDate = DateTime.UtcNow,
+                    PlayState = new PlaybackProgressInfo
+                    {
+                        ItemId = item.Id,
+                        PositionTicks = positionTicks,
+                        IsPaused = isPaused,
+                        CanSeek = true,
+                        AudioStreamIndex = 0,
+                        SubtitleStreamIndex = -1
+                    }
+                });
+                
                 var positionSeconds = positionTicks / 10000000; // Convert ticks to seconds
-                Console.WriteLine($"Playback progress for {user.Username}: {item.Name} at {positionSeconds}s (Paused: {isPaused})");
+                Console.WriteLine($"Updated playback progress for {user.Username}: {item.Name} at {positionSeconds}s (Paused: {isPaused})");
             }
         }
         catch (Exception ex)
@@ -637,8 +689,19 @@ public class AddonController(
             {
                 var session = sessions[0];
                 
-                // Log playback stop for now
-                // Future versions can implement proper stop reporting when the APIs are available
+                // Update the session to show no active playback
+                sessionManager.UpdateSession(session.Id, new SessionInfo
+                {
+                    Id = session.Id,
+                    UserId = user.Id,
+                    UserName = user.Username,
+                    DeviceName = "Jellio",
+                    DeviceId = session.DeviceId,
+                    ApplicationVersion = "1.0.0",
+                    LastActivityDate = DateTime.UtcNow,
+                    PlayState = null // No active playback
+                });
+                
                 var positionSeconds = positionTicks / 10000000; // Convert ticks to seconds
                 Console.WriteLine($"Playback stopped for {user.Username}: {item.Name} at {positionSeconds}s");
             }
