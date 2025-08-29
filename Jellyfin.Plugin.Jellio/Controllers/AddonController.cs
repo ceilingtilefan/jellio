@@ -104,8 +104,8 @@ public class AddonController(
             dto.MediaSources.Select(source => new StreamDto
             {
                 Url = $"{baseUrl}/videos/{dto.Id}/stream?mediaSourceId={source.Id}&static=true",
-                Name = BuildStreamName(dto, source),
-                Description = BuildStreamDescription(dto, source),
+                Name = FormatStreamNameWithEmojis(dto, source),
+                Description = FormatStreamDescriptionWithEmojis(dto, source),
             })
         );
         
@@ -116,6 +116,106 @@ public class AddonController(
         }
         
         return Ok(new { streams });
+    }
+
+    private static string FormatStreamNameWithEmojis(BaseItemDto dto, MediaSourceInfo source)
+    {
+        var parts = new List<string>();
+        
+        // 🎥 Movie/Series title with year
+        var title = dto.Name;
+        if (dto.PremiereDate.HasValue)
+        {
+            title += $" ({dto.PremiereDate.Value.Year})";
+        }
+        parts.Add($"🎥 {title}");
+        
+        // 📺 Video quality info
+        if (source.MediaStreams != null)
+        {
+            var videoStream = source.MediaStreams.FirstOrDefault(s => s.Type == MediaStreamType.Video);
+            if (videoStream != null)
+            {
+                var videoInfo = new List<string>();
+                
+                // Add resolution
+                if (videoStream.Width.HasValue && videoStream.Height.HasValue)
+                {
+                    videoInfo.Add(GetHumanReadableResolution(videoStream.Width.Value, videoStream.Height.Value));
+                }
+                
+                // Add HDR info
+                if (!string.IsNullOrEmpty(videoStream.ColorTransfer) && 
+                    (videoStream.ColorTransfer.Contains("2020", StringComparison.OrdinalIgnoreCase) || 
+                     videoStream.ColorTransfer.Contains("2100", StringComparison.OrdinalIgnoreCase)))
+                {
+                    videoInfo.Add("HDR");
+                }
+                else if (!string.IsNullOrEmpty(videoStream.ColorSpace) && 
+                         videoStream.ColorSpace.Contains("2020", StringComparison.OrdinalIgnoreCase))
+                {
+                    videoInfo.Add("HDR");
+                }
+                
+                // Add Dolby Vision detection
+                if (!string.IsNullOrEmpty(videoStream.ColorTransfer) && 
+                    videoStream.ColorTransfer.Contains("2084", StringComparison.OrdinalIgnoreCase))
+                {
+                    videoInfo.Add("DV");
+                }
+                
+                if (videoInfo.Count > 0)
+                {
+                    parts.Add($"📺 {string.Join(" | ", videoInfo)}");
+                }
+            }
+        }
+        
+        return string.Join("\n", parts);
+    }
+
+    private static string FormatStreamDescriptionWithEmojis(BaseItemDto dto, MediaSourceInfo source)
+    {
+        var parts = new List<string>();
+        
+        // 🔊 Audio codec info
+        if (source.MediaStreams != null)
+        {
+            var audioStreams = source.MediaStreams.Where(s => s.Type == MediaStreamType.Audio).ToList();
+            if (audioStreams.Count > 0)
+            {
+                var audioCodecs = audioStreams
+                    .Where(s => !string.IsNullOrEmpty(s.Codec))
+                    .Select(s => s.Codec.ToUpperInvariant())
+                    .Distinct()
+                    .ToList();
+                
+                if (audioCodecs.Count > 0)
+                {
+                    parts.Add($"🔊 {string.Join(", ", audioCodecs)}");
+                }
+            }
+        }
+        
+        // 📦 File size
+        if (source.Size.HasValue && source.Size.Value > 0)
+        {
+            var sizeInGB = source.Size.Value / (1024.0 * 1024.0 * 1024.0);
+            parts.Add($"📦 {sizeInGB:F1} GB");
+        }
+        
+        // Add resolution to footer
+        if (source.MediaStreams != null)
+        {
+            var videoStream = source.MediaStreams.FirstOrDefault(s => s.Type == MediaStreamType.Video);
+            if (videoStream != null && videoStream.Width.HasValue && videoStream.Height.HasValue)
+            {
+                var resolution = GetHumanReadableResolution(videoStream.Width.Value, videoStream.Height.Value);
+                parts.Add($"Jellyfin {resolution}");
+            }
+        }
+        
+        return parts.Count > 0 ? string.Join("\n", parts) : "Jellio Stream";
     }
 
     private void ReportPlaybackToJellyfin(User user, BaseItem item)
@@ -191,8 +291,13 @@ public class AddonController(
     {
         var parts = new List<string>();
         
-        // Add movie/series title
-        parts.Add(dto.Name);
+        // Add movie/series title with year
+        var title = dto.Name;
+        if (dto.PremiereDate.HasValue)
+        {
+            title += $" ({dto.PremiereDate.Value.Year})";
+        }
+        parts.Add(title);
         
         // Add video quality info
         if (source.MediaStreams != null)
@@ -221,6 +326,13 @@ public class AddonController(
                     videoInfo.Add("HDR");
                 }
                 
+                // Add Dolby Vision detection
+                if (!string.IsNullOrEmpty(videoStream.ColorTransfer) && 
+                    videoStream.ColorTransfer.Contains("2084", StringComparison.OrdinalIgnoreCase))
+                {
+                    videoInfo.Add("DV");
+                }
+                
                 // Add codec info
                 if (!string.IsNullOrEmpty(videoStream.Codec))
                 {
@@ -229,12 +341,12 @@ public class AddonController(
                 
                 if (videoInfo.Count > 0)
                 {
-                    parts.Add(string.Join(" ", videoInfo));
+                    parts.Add(string.Join(" | ", videoInfo));
                 }
             }
         }
         
-        return string.Join(" | ", parts);
+        return string.Join("\n", parts);
     }
 
     private static string BuildStreamDescription(BaseItemDto dto, MediaSourceInfo source)
