@@ -13,6 +13,7 @@ using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Session;
 using MediaBrowser.Model.Dto;
+using MediaBrowser.Model.Authentication;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.MediaInfo;
 using MediaBrowser.Model.Querying;
@@ -203,7 +204,7 @@ public class AddonController(
             parts.Add($"📦 {sizeInGB:F1} GB");
         }
         
-        // Add resolution to footer
+        // Add resolution to footer (human-readable format)
         if (source.MediaStreams != null)
         {
             var videoStream = source.MediaStreams.FirstOrDefault(s => s.Type == MediaStreamType.Video);
@@ -221,12 +222,16 @@ public class AddonController(
     {
         try
         {
+            Console.WriteLine($"=== Starting playback report for user {user.Username} ===");
+            
             // Find the Jellio session for this user
             var sessions = sessionManager.Sessions.Where(s => s.UserId == user.Id && s.DeviceName == "Jellio").ToList();
+            Console.WriteLine($"Found {sessions.Count} existing Jellio sessions for user {user.Username}");
             
             if (sessions.Count > 0)
             {
                 var session = sessions[0];
+                Console.WriteLine($"Using existing session: {session.Id} for device: {session.DeviceId}");
                 
                 // Keep the session active by logging activity
                 // The session is already active, so Jellyfin will show the user as online
@@ -237,15 +242,47 @@ public class AddonController(
             }
             else
             {
-                // If no session exists, we can't create one due to API limitations
-                // The session will be created when the user accesses the web interface
-                Console.WriteLine($"No active session found for user {user.Username}. Session will be created on web access.");
+                Console.WriteLine($"No existing Jellio session found for user {user.Username}, creating new one...");
+                
+                // If no session exists, we need to create one to show up in Active Devices
+                // We'll use the same approach as AuthController.StartSession()
+                try
+                {
+                    var deviceId = Guid.NewGuid().ToString();
+                    Console.WriteLine($"Creating new device with ID: {deviceId}");
+                    
+                    var authenticationResult = sessionManager.AuthenticateDirect(
+                        new AuthenticationRequest
+                        {
+                            UserId = user.Id,
+                            DeviceId = deviceId,
+                            DeviceName = "Jellio",
+                            App = "Jellio",
+                            AppVersion = "1.0.0",
+                        }
+                    );
+                    
+                    Console.WriteLine($"Successfully created new session for user {user.Username}: {item.Name} (ID: {item.Id})");
+                    Console.WriteLine($"New access token: {authenticationResult.AccessToken}");
+                    
+                    // Verify the session was created
+                    var newSessions = sessionManager.Sessions.Where(s => s.UserId == user.Id && s.DeviceName == "Jellio").ToList();
+                    Console.WriteLine($"After creation, found {newSessions.Count} Jellio sessions for user {user.Username}");
+                }
+                catch (Exception authEx)
+                {
+                    Console.WriteLine($"Failed to create session for user {user.Username}: {authEx.Message}");
+                    Console.WriteLine($"Exception details: {authEx}");
+                }
             }
+            
+            Console.WriteLine($"=== Completed playback report for user {user.Username} ===");
         }
         catch (Exception ex)
         {
             // Log error but don't fail the request
             Console.WriteLine($"Failed to report playback to Jellyfin: {ex.Message}");
+            Console.WriteLine($"Exception details: {ex}");
         }
     }
 
@@ -379,13 +416,25 @@ public class AddonController(
         {
             (7680, 4320) => "8K",
             (3840, 2160) => "4K",
+            (3840, 2076) => "4K", // Common 4K variation
             (2560, 1440) => "1440p",
             (1920, 1080) => "1080p",
             (1280, 720) => "720p",
             (854, 480) => "480p",
             (640, 360) => "360p",
             (426, 240) => "240p",
-            _ => $"{width}x{height}"
+            _ => width switch
+            {
+                >= 7680 => "8K+",
+                >= 3840 => "4K",
+                >= 2560 => "1440p",
+                >= 1920 => "1080p",
+                >= 1280 => "720p",
+                >= 854 => "480p",
+                >= 640 => "360p",
+                >= 426 => "240p",
+                _ => $"{width}x{height}"
+            }
         };
     }
 
