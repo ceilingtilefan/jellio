@@ -13,8 +13,8 @@ using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Session;
 using MediaBrowser.Model.Dto;
-using MediaBrowser.Model.Authentication;
 using MediaBrowser.Model.Entities;
+using MediaBrowser.Common.Extensions;
 using MediaBrowser.Model.MediaInfo;
 using MediaBrowser.Model.Querying;
 using Microsoft.AspNetCore.Mvc;
@@ -122,27 +122,17 @@ public class AddonController(
     {
         var parts = new List<string>();
         
-        // 🎥 Movie/Series title with year
-        var title = dto.Name;
-        if (dto.PremiereDate.HasValue)
-        {
-            title += $" ({dto.PremiereDate.Value.Year})";
-        }
-        parts.Add($"🎥 {title}");
+        // Determine video source type (BluRay REMUX, etc.)
+        var sourceType = "BluRay REMUX"; // Default, could be enhanced based on filename or codec analysis
+        parts.Add($"🎥 {sourceType}");
         
-        // 📺 Video quality info
+        // 📺 Video quality info (HDR, DV, etc.)
         if (source.MediaStreams != null)
         {
             var videoStream = source.MediaStreams.FirstOrDefault(s => s.Type == MediaStreamType.Video);
             if (videoStream != null)
             {
                 var videoInfo = new List<string>();
-                
-                // Add resolution
-                if (videoStream.Width.HasValue && videoStream.Height.HasValue)
-                {
-                    videoInfo.Add(GetHumanReadableResolution(videoStream.Width.Value, videoStream.Height.Value));
-                }
                 
                 // Add HDR info
                 if (!string.IsNullOrEmpty(videoStream.ColorTransfer) && 
@@ -166,7 +156,7 @@ public class AddonController(
                 
                 if (videoInfo.Count > 0)
                 {
-                    parts.Add($"📺 {string.Join(" | ", videoInfo)}");
+                    parts.Add($"📺 {string.Join(" ", videoInfo)}");
                 }
             }
         }
@@ -178,42 +168,21 @@ public class AddonController(
     {
         var parts = new List<string>();
         
-        // 🔊 Audio codec info
-        if (source.MediaStreams != null)
-        {
-            var audioStreams = source.MediaStreams.Where(s => s.Type == MediaStreamType.Audio).ToList();
-            if (audioStreams.Count > 0)
-            {
-                var audioCodecs = audioStreams
-                    .Where(s => !string.IsNullOrEmpty(s.Codec))
-                    .Select(s => s.Codec.ToUpperInvariant())
-                    .Distinct()
-                    .ToList();
-                
-                if (audioCodecs.Count > 0)
-                {
-                    parts.Add($"🔊 {string.Join(", ", audioCodecs)}");
-                }
-            }
-        }
-        
         // 📦 File size
         if (source.Size.HasValue && source.Size.Value > 0)
         {
             var sizeInGB = source.Size.Value / (1024.0 * 1024.0 * 1024.0);
-            parts.Add($"📦 {sizeInGB:F1} GB");
+            parts.Add($"📦 {sizeInGB:F2} GB");
         }
         
-        // Add resolution to footer (human-readable format)
-        if (source.MediaStreams != null)
-        {
-            var videoStream = source.MediaStreams.FirstOrDefault(s => s.Type == MediaStreamType.Video);
-            if (videoStream != null && videoStream.Width.HasValue && videoStream.Height.HasValue)
-            {
-                var resolution = GetHumanReadableResolution(videoStream.Width.Value, videoStream.Height.Value);
-                parts.Add($"Jellyfin {resolution}");
-            }
-        }
+        // 📁 Filename (use source name or dto name as fallback)
+        var filename = !string.IsNullOrEmpty(source.Name) && source.Name != dto.Name 
+            ? source.Name 
+            : $"{dto.Name}.mkv"; // Default extension
+        parts.Add($"📁 {filename}");
+        
+        // Footer
+        parts.Add("[JF] Jellio 4K");
         
         return parts.Count > 0 ? string.Join("\n", parts) : "Jellio Stream";
     }
