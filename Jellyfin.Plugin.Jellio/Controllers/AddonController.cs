@@ -108,24 +108,24 @@ public class AddonController(
                 Description = FormatStreamDescriptionWithEmojis(dto, source),
             })
         );
-        
+
         // Report playback to Jellyfin Active Devices
         if (items.Count > 0)
         {
             ReportPlaybackToJellyfin(user, items[0]);
         }
-        
+
         return Ok(new { streams });
     }
 
     private static string FormatStreamNameWithEmojis(BaseItemDto dto, MediaSourceInfo source)
     {
         var parts = new List<string>();
-        
+
         // Determine video source type (BluRay REMUX, etc.)
         var sourceType = "BluRay REMUX"; // Default, could be enhanced based on filename or codec analysis
         parts.Add($"🎥 {sourceType}");
-        
+
         // 📺 Video quality info (HDR, DV, etc.)
         if (source.MediaStreams != null)
         {
@@ -133,57 +133,57 @@ public class AddonController(
             if (videoStream != null)
             {
                 var videoInfo = new List<string>();
-                
+
                 // Add HDR info
-                if (!string.IsNullOrEmpty(videoStream.ColorTransfer) && 
-                    (videoStream.ColorTransfer.Contains("2020", StringComparison.OrdinalIgnoreCase) || 
+                if (!string.IsNullOrEmpty(videoStream.ColorTransfer) &&
+                    (videoStream.ColorTransfer.Contains("2020", StringComparison.OrdinalIgnoreCase) ||
                      videoStream.ColorTransfer.Contains("2100", StringComparison.OrdinalIgnoreCase)))
                 {
                     videoInfo.Add("HDR");
                 }
-                else if (!string.IsNullOrEmpty(videoStream.ColorSpace) && 
+                else if (!string.IsNullOrEmpty(videoStream.ColorSpace) &&
                          videoStream.ColorSpace.Contains("2020", StringComparison.OrdinalIgnoreCase))
                 {
                     videoInfo.Add("HDR");
                 }
-                
+
                 // Add Dolby Vision detection
-                if (!string.IsNullOrEmpty(videoStream.ColorTransfer) && 
+                if (!string.IsNullOrEmpty(videoStream.ColorTransfer) &&
                     videoStream.ColorTransfer.Contains("2084", StringComparison.OrdinalIgnoreCase))
                 {
                     videoInfo.Add("DV");
                 }
-                
+
                 if (videoInfo.Count > 0)
                 {
                     parts.Add($"📺 {string.Join(" ", videoInfo)}");
                 }
             }
         }
-        
+
         return string.Join("\n", parts);
     }
 
     private static string FormatStreamDescriptionWithEmojis(BaseItemDto dto, MediaSourceInfo source)
     {
         var parts = new List<string>();
-        
+
         // 📦 File size
         if (source.Size.HasValue && source.Size.Value > 0)
         {
             var sizeInGB = source.Size.Value / (1024.0 * 1024.0 * 1024.0);
             parts.Add($"📦 {sizeInGB:F2} GB");
         }
-        
+
         // 📁 Filename (use source name or dto name as fallback)
-        var filename = !string.IsNullOrEmpty(source.Name) && source.Name != dto.Name 
-            ? source.Name 
+        var filename = !string.IsNullOrEmpty(source.Name) && source.Name != dto.Name
+            ? source.Name
             : $"{dto.Name}.mkv"; // Default extension
         parts.Add($"📁 {filename}");
-        
+
         // Footer
         parts.Add("[JF] Jellio 4K");
-        
+
         return parts.Count > 0 ? string.Join("\n", parts) : "Jellio Stream";
     }
 
@@ -192,34 +192,34 @@ public class AddonController(
         try
         {
             Console.WriteLine($"=== Starting playback report for user {user.Username} ===");
-            
+
             // Find the Jellio session for this user
             var sessions = sessionManager.Sessions.Where(s => s.UserId == user.Id && s.DeviceName == "Jellio").ToList();
             Console.WriteLine($"Found {sessions.Count} existing Jellio sessions for user {user.Username}");
-            
+
             if (sessions.Count > 0)
             {
                 var session = sessions[0];
                 Console.WriteLine($"Using existing session: {session.Id} for device: {session.DeviceId}");
-                
+
                 // Keep the session active by logging activity
                 // The session is already active, so Jellyfin will show the user as online
                 Console.WriteLine($"Session active for user {user.Username}: {item.Name} (ID: {item.Id})");
-                
+
                 // Note: We can't update the session with playback info due to API limitations
                 // But the session remains active, which is what we need for Active Devices visibility
             }
             else
             {
                 Console.WriteLine($"No existing Jellio session found for user {user.Username}, creating new one...");
-                
+
                 // If no session exists, we need to create one to show up in Active Devices
                 // We'll use the same approach as AuthController.StartSession()
                 try
                 {
                     var deviceId = Guid.NewGuid().ToString();
                     Console.WriteLine($"Creating new device with ID: {deviceId}");
-                    
+
                     var authenticationResult = sessionManager.AuthenticateDirect(
                         new AuthenticationRequest
                         {
@@ -229,11 +229,11 @@ public class AddonController(
                             App = "Jellio",
                             AppVersion = "1.0.0",
                         }
-                    );
-                    
+                    ).ConfigureAwait(false).GetAwaiter().GetResult();
+
                     Console.WriteLine($"Successfully created new session for user {user.Username}: {item.Name} (ID: {item.Id})");
                     Console.WriteLine($"New access token: {authenticationResult.AccessToken}");
-                    
+
                     // Verify the session was created
                     var newSessions = sessionManager.Sessions.Where(s => s.UserId == user.Id && s.DeviceName == "Jellio").ToList();
                     Console.WriteLine($"After creation, found {newSessions.Count} Jellio sessions for user {user.Username}");
@@ -244,7 +244,7 @@ public class AddonController(
                     Console.WriteLine($"Exception details: {authEx}");
                 }
             }
-            
+
             Console.WriteLine($"=== Completed playback report for user {user.Username} ===");
         }
         catch (Exception ex)
@@ -258,7 +258,7 @@ public class AddonController(
     private static string BuildStreamName(BaseItemDto dto, MediaSourceInfo source)
     {
         var parts = new List<string>();
-        
+
         // Add movie/series title with year
         var title = dto.Name;
         if (dto.PremiereDate.HasValue)
@@ -266,7 +266,7 @@ public class AddonController(
             title += $" ({dto.PremiereDate.Value.Year})";
         }
         parts.Add(title);
-        
+
         // Add video quality info
         if (source.MediaStreams != null)
         {
@@ -274,59 +274,59 @@ public class AddonController(
             if (videoStream != null)
             {
                 var videoInfo = new List<string>();
-                
+
                 // Add resolution
                 if (videoStream.Width.HasValue && videoStream.Height.HasValue)
                 {
                     videoInfo.Add(GetHumanReadableResolution(videoStream.Width.Value, videoStream.Height.Value));
                 }
-                
+
                 // Add HDR info
-                if (!string.IsNullOrEmpty(videoStream.ColorTransfer) && 
-                    (videoStream.ColorTransfer.Contains("2020", StringComparison.OrdinalIgnoreCase) || 
+                if (!string.IsNullOrEmpty(videoStream.ColorTransfer) &&
+                    (videoStream.ColorTransfer.Contains("2020", StringComparison.OrdinalIgnoreCase) ||
                      videoStream.ColorTransfer.Contains("2100", StringComparison.OrdinalIgnoreCase)))
                 {
                     videoInfo.Add("HDR");
                 }
-                else if (!string.IsNullOrEmpty(videoStream.ColorSpace) && 
+                else if (!string.IsNullOrEmpty(videoStream.ColorSpace) &&
                          videoStream.ColorSpace.Contains("2020", StringComparison.OrdinalIgnoreCase))
                 {
                     videoInfo.Add("HDR");
                 }
-                
+
                 // Add Dolby Vision detection
-                if (!string.IsNullOrEmpty(videoStream.ColorTransfer) && 
+                if (!string.IsNullOrEmpty(videoStream.ColorTransfer) &&
                     videoStream.ColorTransfer.Contains("2084", StringComparison.OrdinalIgnoreCase))
                 {
                     videoInfo.Add("DV");
                 }
-                
+
                 // Add codec info
                 if (!string.IsNullOrEmpty(videoStream.Codec))
                 {
                     videoInfo.Add(videoStream.Codec.ToUpperInvariant());
                 }
-                
+
                 if (videoInfo.Count > 0)
                 {
                     parts.Add(string.Join(" | ", videoInfo));
                 }
             }
         }
-        
+
         return string.Join("\n", parts);
     }
 
     private static string BuildStreamDescription(BaseItemDto dto, MediaSourceInfo source)
     {
         var parts = new List<string>();
-        
+
         // Add source name if different from title
         if (!string.IsNullOrEmpty(source.Name) && source.Name != dto.Name)
         {
             parts.Add(source.Name);
         }
-        
+
         // Add audio language info
         if (source.MediaStreams != null)
         {
@@ -338,33 +338,33 @@ public class AddonController(
                     .Select(s => s.Language)
                     .Distinct()
                     .ToList();
-                
+
                 if (languages.Count > 0)
                 {
                     parts.Add($"Audio: {string.Join(", ", languages)}");
                 }
-                
+
                 // Add audio codec info
                 var audioCodecs = audioStreams
                     .Where(s => !string.IsNullOrEmpty(s.Codec))
                     .Select(s => s.Codec.ToUpperInvariant())
                     .Distinct()
                     .ToList();
-                
+
                 if (audioCodecs.Count > 0)
                 {
                     parts.Add($"Codec: {string.Join(", ", audioCodecs)}");
                 }
             }
         }
-        
+
         // Add file size if available
         if (source.Size.HasValue && source.Size.Value > 0)
         {
             var sizeInGB = source.Size.Value / (1024.0 * 1024.0 * 1024.0);
             parts.Add($"Size: {sizeInGB:F1} GB");
         }
-        
+
         // Add resolution to footer
         if (source.MediaStreams != null)
         {
@@ -375,7 +375,7 @@ public class AddonController(
                 parts.Add($"Jellyfin {resolution}");
             }
         }
-        
+
         return parts.Count > 0 ? string.Join(" | ", parts) : "Jellio Stream";
     }
 
@@ -663,7 +663,7 @@ public class AddonController(
     )
     {
         var user = (User)HttpContext.Items["JellioUser"]!;
-        
+
         try
         {
             // Parse the itemId from "jellio:guid" format
@@ -671,13 +671,13 @@ public class AddonController(
             {
                 return BadRequest(new { error = "Invalid itemId format. Expected 'jellio:guid'" });
             }
-            
+
             var guidString = request.ItemId.Substring(7); // Remove "jellio:" prefix
             if (!Guid.TryParse(guidString, out var itemGuid))
             {
                 return BadRequest(new { error = "Invalid GUID format in itemId" });
             }
-            
+
             var item = libraryManager.GetItemById<BaseItem>(itemGuid, user);
             if (item == null)
             {
@@ -700,7 +700,7 @@ public class AddonController(
     )
     {
         var user = (User)HttpContext.Items["JellioUser"]!;
-        
+
         try
         {
             // Parse the itemId from "jellio:guid" format
@@ -708,13 +708,13 @@ public class AddonController(
             {
                 return BadRequest(new { error = "Invalid itemId format. Expected 'jellio:guid'" });
             }
-            
+
             var guidString = request.ItemId.Substring(7); // Remove "jellio:" prefix
             if (!Guid.TryParse(guidString, out var itemGuid))
             {
                 return BadRequest(new { error = "Invalid GUID format in itemId" });
             }
-            
+
             var item = libraryManager.GetItemById<BaseItem>(itemGuid, user);
             if (item == null)
             {
@@ -735,11 +735,11 @@ public class AddonController(
         try
         {
             var sessions = sessionManager.Sessions.Where(s => s.UserId == user.Id && s.DeviceName == "Jellio").ToList();
-            
+
             if (sessions.Count > 0)
             {
                 var session = sessions[0];
-                
+
                 // Log playback progress for now
                 // The session remains active, which keeps the user visible in Active Devices
                 var positionSeconds = positionTicks / 10000000; // Convert ticks to seconds
@@ -757,11 +757,11 @@ public class AddonController(
         try
         {
             var sessions = sessionManager.Sessions.Where(s => s.UserId == user.Id && s.DeviceName == "Jellio").ToList();
-            
+
             if (sessions.Count > 0)
             {
                 var session = sessions[0];
-                
+
                 // Log playback stop for now
                 // The session remains active, which keeps the user visible in Active Devices
                 var positionSeconds = positionTicks / 10000000; // Convert ticks to seconds
