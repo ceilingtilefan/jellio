@@ -168,6 +168,54 @@ public class AddonController(
     {
         var parts = new List<string>();
 
+        // 📺 Video quality tags (resolution, HDR, DV, etc.)
+        if (source.MediaStreams != null)
+        {
+            var videoStream = source.MediaStreams.FirstOrDefault(s => s.Type == MediaStreamType.Video);
+            if (videoStream != null)
+            {
+                var videoTags = new List<string>();
+
+                // Add resolution tag
+                if (videoStream.Width.HasValue && videoStream.Height.HasValue)
+                {
+                    var resolution = GetHumanReadableResolution(videoStream.Width.Value, videoStream.Height.Value);
+                    videoTags.Add(resolution);
+                }
+
+                // Add HDR info
+                if (!string.IsNullOrEmpty(videoStream.ColorTransfer) &&
+                    (videoStream.ColorTransfer.Contains("2020", StringComparison.OrdinalIgnoreCase) ||
+                     videoStream.ColorTransfer.Contains("2100", StringComparison.OrdinalIgnoreCase)))
+                {
+                    videoTags.Add("HDR");
+                }
+                else if (!string.IsNullOrEmpty(videoStream.ColorSpace) &&
+                         videoStream.ColorSpace.Contains("2020", StringComparison.OrdinalIgnoreCase))
+                {
+                    videoTags.Add("HDR");
+                }
+
+                // Add Dolby Vision detection
+                if (!string.IsNullOrEmpty(videoStream.ColorTransfer) &&
+                    videoStream.ColorTransfer.Contains("2084", StringComparison.OrdinalIgnoreCase))
+                {
+                    videoTags.Add("Dolby Vision");
+                }
+
+                // Add codec info
+                if (!string.IsNullOrEmpty(videoStream.Codec))
+                {
+                    videoTags.Add(videoStream.Codec.ToUpperInvariant());
+                }
+
+                if (videoTags.Count > 0)
+                {
+                    parts.Add($"📺 {string.Join(" • ", videoTags)}");
+                }
+            }
+        }
+
         // 📦 File size
         if (source.Size.HasValue && source.Size.Value > 0)
         {
